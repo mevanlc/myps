@@ -7,11 +7,19 @@ from myps import cli, configutil, psprinter, pssafe
 
 
 class StubProcess:
-    def __init__(self, pid: int, exe: str, uids: tuple[int, int, int], ppid: int):
+    def __init__(
+        self,
+        pid: int,
+        exe: str,
+        uids: tuple[int, int, int],
+        ppid: int,
+        username: str = "example\\user",
+    ):
         self.pid = pid
         self._exe = exe
         self._uids = uids
         self._ppid = ppid
+        self._username = username
         self._cmdline = [exe]
         self._name = os.path.basename(exe) or f"proc{pid}"
 
@@ -29,6 +37,9 @@ class StubProcess:
 
     def name(self):
         return self._name
+
+    def username(self):
+        return self._username
 
 
 @pytest.fixture(autouse=True)
@@ -89,7 +100,7 @@ terminal = 'Terminal.app/'
     procs = [terminal_proc, system_proc]
     proc_map = {p.pid: p for p in procs + [parent_proc]}
 
-    monkeypatch.setattr(os, "getuid", lambda: user_uid)
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", user_uid))
     monkeypatch.setattr(cli.psutil, "process_iter", lambda: iter(procs))
     monkeypatch.setattr(pssafe, "safe_get_process", lambda pid: proc_map.get(pid))
     monkeypatch.setattr(
@@ -121,7 +132,7 @@ def test_cli_include_self(monkeypatch, capsys):
         ppid=1,
     )
 
-    monkeypatch.setattr(os, "getuid", lambda: user_uid)
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", user_uid))
     monkeypatch.setattr(cli.psutil, "process_iter", lambda: iter([self_proc]))
     monkeypatch.setattr(pssafe, "safe_get_process", lambda _pid: None)
     monkeypatch.setattr(
@@ -158,7 +169,7 @@ def test_cli_no_config_ignores_default_config(tmp_path, monkeypatch, capsys):
         uids=(user_uid, user_uid, user_uid),
         ppid=1,
     )
-    monkeypatch.setattr(os, "getuid", lambda: user_uid)
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", user_uid))
     monkeypatch.setattr(cli.psutil, "process_iter", lambda: iter([proc]))
     monkeypatch.setattr(pssafe, "safe_get_process", lambda _pid: None)
     monkeypatch.setattr(
@@ -196,6 +207,51 @@ def test_main_propagates_unexpected_exceptions(monkeypatch):
 
     with pytest.raises(Boom, match="boom"):
         cli.main()
+
+
+def test_username_identity_is_case_insensitive():
+    proc = StubProcess(
+        pid=123,
+        exe=r"C:\Program Files\Example\example.exe",
+        uids=(501, 501, 501),
+        ppid=1,
+        username="EXAMPLE\\Alice",
+    )
+
+    assert cli.process_belongs_to_user(proc, ("username", "example\\alice"))
+
+
+def test_cli_username_identity_excludes_other_users(monkeypatch, capsys):
+    own_proc = StubProcess(
+        pid=123,
+        exe=r"C:\Users\Alice\example.exe",
+        uids=(501, 501, 501),
+        ppid=1,
+        username="EXAMPLE\\Alice",
+    )
+    other_proc = StubProcess(
+        pid=456,
+        exe=r"C:\Users\Bob\other.exe",
+        uids=(502, 502, 502),
+        ppid=1,
+        username="EXAMPLE\\Bob",
+    )
+    monkeypatch.setattr(
+        cli, "current_user_identity", lambda: ("username", "example\\alice")
+    )
+    monkeypatch.setattr(
+        cli.psutil, "process_iter", lambda: iter([own_proc, other_proc])
+    )
+    monkeypatch.setattr(pssafe, "safe_get_process", lambda _pid: None)
+    monkeypatch.setattr(
+        psprinter.RichProcess, "is_argv0_equal_to_exe", lambda self: True
+    )
+    sys.argv = ["myps", "--full", "--color", "never", "--no-config"]
+
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert "example.exe 123" in out
+    assert "other.exe 456" not in out
 
 
 def test_rich_process_mismatch_renders_exe_instead_of_raising():

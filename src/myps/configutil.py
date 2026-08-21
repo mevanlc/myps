@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 import typing
@@ -7,7 +8,14 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_CONFIG_PATH = Path("~/.config/myps/config.toml").expanduser()
+
+def _default_config_path() -> Path:
+    if os.name == "nt" and (local_app_data := os.environ.get("LOCALAPPDATA")):
+        return Path(local_app_data) / "myps" / "config.toml"
+    return Path("~/.config/myps/config.toml").expanduser()
+
+
+DEFAULT_CONFIG_PATH = _default_config_path()
 _SAMPLE_CONFIG_TEMPLATE = Path(__file__).with_name("config.sample.toml")
 _FALLBACK_SAMPLE_CONTENT = """# Example myps configuration\n# Define regex patterns to skip/keep processes.\n[regexSkipPatterns]\nsystem = '^/System/'\nusr_sbin = '^/usr/sbin/'\nusr_libexec = '^/usr/libexec/'\napplications = '^/Applications/'\nlibrary = '^/Library/'\nhttpd = '/httpd$'\nphp_fpm = '/php-fpm$'\n\n[regexKeepPatterns]\niterm = '/Applications/iTerm2?.app/'\nterminal = '/Applications/Utilities/Terminal.app/'\nxcode = '[Xx][Cc]ode'\n"""
 _CONFIG_SKIP_KEY = "regexSkipPatterns"

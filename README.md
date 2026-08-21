@@ -1,11 +1,11 @@
 # myps
 
-A process tree viewer for the current user, with filtering.
+A cross-platform process tree viewer for the current user, with filtering.
 
-`myps` lists only the processes owned by your UID, arranges them as a tree, and
-renders each one as `name pid <exe> cmdline` with color. Noisy system processes
-can be filtered out permanently via a config file, and a pattern argument
-narrows the output further for one-off searches.
+`myps` lists only the processes owned by your user account, arranges them as a
+tree, and renders each one as `name pid <exe> cmdline` with color. Noisy system
+processes can be filtered out permanently via a config file, and a pattern
+argument narrows the output further for one-off searches.
 
 ```
 launchd 1 </sbin/launchd> ⛔️
@@ -28,11 +28,15 @@ dropped: ⛔️ access denied, 🧟 zombie, 🪦 no longer exists.
 - Python >= 3.11 (development uses the version in `.python-version`)
 - [`uv`](https://docs.astral.sh/uv/)
 
+Linux, macOS, and Windows are supported.
+
 ## Install
 
 ```bash
 uv tool install git+https://github.com/mevanlc/myps-py.git
 ```
+
+The same command works in PowerShell on Windows.
 
 Or from a clone, for development:
 
@@ -87,7 +91,8 @@ myps -f node | less -R     # untruncated, piped
 
 ## Configuration
 
-Config lives at `~/.config/myps/config.toml` (override with `-c`, or disable
+Config lives at `~/.config/myps/config.toml` on Linux and macOS, and at
+`%LOCALAPPDATA%\myps\config.toml` on Windows (override with `-c`, or disable
 config loading with `--no-config`). Write a starting point with:
 
 ```bash

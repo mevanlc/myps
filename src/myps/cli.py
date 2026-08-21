@@ -11,7 +11,7 @@ import signal
 import sys
 import textwrap
 from functools import wraps
-from typing import Iterator
+from typing import Iterator, Literal
 
 import psutil
 from psutil import Process
@@ -28,9 +28,34 @@ TRUNC_INDICATOR = "…"
 
 
 def main() -> None:
+    # Redirected stdout commonly defaults to a legacy code page on Windows,
+    # which cannot encode the tree and process-status glyphs used by myps.
+    if os.name == "nt" and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     # Reset SIGPIPE to default behavior to avoid BrokenPipeError when piping to less/head/etc
-    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    sigpipe = getattr(signal, "SIGPIPE", None)
+    if sigpipe is not None:
+        signal.signal(sigpipe, signal.SIG_DFL)
     raise SystemExit(cli_main())
+
+
+UserIdentity = tuple[Literal["uid"], int] | tuple[Literal["username"], str]
+
+
+def current_user_identity() -> UserIdentity:
+    """Return an identity suitable for comparing process ownership on this OS."""
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None:
+        return ("uid", int(getuid()))
+    return ("username", psutil.Process().username().casefold())
+
+
+def process_belongs_to_user(proc: Process, identity: UserIdentity) -> bool:
+    kind, value = identity
+    if kind == "uid":
+        return value in proc.uids()
+    return proc.username().casefold() == value
 
 
 class MyHelpFormatter(
@@ -42,9 +67,9 @@ class MyHelpFormatter(
 def cli_main() -> int:
     parser = argparse.ArgumentParser(
         epilog=textwrap.dedent(
-            """
+            f"""
             --init-config writes an example config to the default path
-            (~/.config/myps/config.toml) or to the file given by -c/--config.
+            ({configutil.DEFAULT_CONFIG_PATH}) or to the file given by -c/--config.
 
             Filters match against each process's full command line string.
             
@@ -96,7 +121,7 @@ def cli_main() -> int:
         "--config",
         dest="config_path",
         metavar="FILE",
-        help="Read config from <file> instead of ~/.config/myps/config.toml",
+        help=f"Read config from <file> instead of {configutil.DEFAULT_CONFIG_PATH}",
     )
     config_group.add_argument(
         "--no-config",
@@ -149,7 +174,7 @@ def cli_main() -> int:
     else:
         term_width = shutil.get_terminal_size((80, 20)).columns
 
-    myuid = os.getuid()
+    user_identity = current_user_identity()
     thispid = os.getpid()
 
     skip_pattern = config.skip_re
@@ -161,8 +186,7 @@ def cli_main() -> int:
         if not args.include_self and myps.pssafe.safe_get_pid(proc) == thispid:
             continue
         try:
-            uids = proc.uids()
-            if myuid in uids:
+            if process_belongs_to_user(proc, user_identity):
                 exe = proc.exe()
                 skip_match = skip_pattern.search(exe) if skip_pattern else None
                 keep_match = keep_pattern.search(exe) if keep_pattern else None
@@ -201,7 +225,7 @@ def cli_main() -> int:
                 f"Pattern: {args.filter_pattern!r}, Regex: {args.regex}, Case: {args.case}"
             )
             print(f"Compiled regex: {re_pattern.pattern if re_pattern else 'None'}")
-        print(f"Total processes for user {myuid}: {len(myprocs)}")
+        print(f"Total processes for user {user_identity[1]}: {len(myprocs)}")
 
     if myprocs:
         tree = PSTree.from_processes(myprocs)
