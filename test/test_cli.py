@@ -157,6 +157,57 @@ def test_cli_include_self(monkeypatch, capsys):
     assert f"myps {os.getpid()}" in capsys.readouterr().out
 
 
+def test_cli_excludes_self_launcher_and_descendants(monkeypatch, capsys):
+    user_uid = 501
+    launcher_proc = StubProcess(
+        pid=100,
+        exe=r"C:\Users\example\.local\bin\myps.exe",
+        uids=(user_uid, user_uid, user_uid),
+        ppid=1,
+    )
+    self_proc = StubProcess(
+        pid=os.getpid(),
+        exe=r"C:\Users\example\AppData\Roaming\uv\tools\myps\python.exe",
+        uids=(user_uid, user_uid, user_uid),
+        ppid=200,
+    )
+    runtime_proc = StubProcess(
+        pid=200,
+        exe=r"C:\Users\example\AppData\Roaming\uv\tools\myps\python.exe",
+        uids=(user_uid, user_uid, user_uid),
+        ppid=launcher_proc.pid,
+    )
+    child_proc = StubProcess(
+        pid=300,
+        exe=r"C:\Program Files\example\copilot.exe",
+        uids=(user_uid, user_uid, user_uid),
+        ppid=self_proc.pid,
+    )
+    launcher_proc._cmdline.append("copilot")
+    self_proc._cmdline.extend([launcher_proc.exe(), "copilot"])
+
+    procs = [launcher_proc, runtime_proc, self_proc, child_proc]
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", user_uid))
+    monkeypatch.setattr(cli.psutil, "process_iter", lambda: iter(procs))
+    monkeypatch.setattr(pssafe, "safe_get_process", lambda _pid: None)
+    monkeypatch.setattr(
+        psprinter.RichProcess, "is_argv0_equal_to_exe", lambda self: True
+    )
+
+    base_args = ["myps", "--full", "--color", "never", "--no-config"]
+    sys.argv = base_args
+    assert cli.cli_main() == 0
+    assert capsys.readouterr().out == "No matching processes found for current user.\n"
+
+    sys.argv = [*base_args, "--include-self"]
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert "myps.exe 100" in out
+    assert "python.exe 200" in out
+    assert f"python.exe {os.getpid()}" in out
+    assert "copilot.exe 300" in out
+
+
 def test_cli_no_config_ignores_default_config(tmp_path, monkeypatch, capsys):
     config_path = tmp_path / "config.toml"
     config_path.write_text("[regexSkipPatterns]\neverything = '.*'\n")

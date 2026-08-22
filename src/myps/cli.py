@@ -11,7 +11,7 @@ import signal
 import sys
 import textwrap
 from functools import wraps
-from typing import Iterator, Literal
+from typing import Literal
 
 import psutil
 from psutil import Process
@@ -56,6 +56,62 @@ def process_belongs_to_user(proc: Process, identity: UserIdentity) -> bool:
     if kind == "uid":
         return value in proc.uids()
     return proc.username().casefold() == value
+
+
+def myps_invocation_pids(processes: list[Process], thispid: int) -> set[int]:
+    """Return the launcher, runtime process, and descendants for this invocation."""
+    pid_map = {myps.pssafe.safe_get_pid(proc): proc for proc in processes}
+    current = pid_map.get(thispid)
+    invocation_root_pid = thispid
+
+    # Windows entry-point launchers such as myps.exe can have one or more Python
+    # runtime processes below them. Treat the launcher as self so the entire
+    # invocation is hidden.
+    while current is not None:
+        parent_pid = myps.pssafe.safe_get_ppid(current)
+        parent = pid_map.get(parent_pid)
+        if parent is None:
+            break
+        if is_myps_launcher(parent):
+            invocation_root_pid = parent_pid
+            break
+        if not is_python_runtime(parent):
+            break
+        current = parent
+
+    children_by_parent: dict[int, list[int]] = {}
+    for proc in processes:
+        pid = myps.pssafe.safe_get_pid(proc)
+        ppid = myps.pssafe.safe_get_ppid(proc)
+        children_by_parent.setdefault(ppid, []).append(pid)
+
+    invocation_pids: set[int] = set()
+    pending = [invocation_root_pid]
+    while pending:
+        pid = pending.pop()
+        if pid in invocation_pids:
+            continue
+        invocation_pids.add(pid)
+        pending.extend(children_by_parent.get(pid, []))
+    return invocation_pids
+
+
+def is_myps_launcher(proc: Process) -> bool:
+    return process_name_stem(proc) == "myps"
+
+
+def is_python_runtime(proc: Process) -> bool:
+    return process_name_stem(proc) in {"py", "python", "pythonw"}
+
+
+def process_name_stem(proc: Process) -> str:
+    name = myps.pssafe.safe_get_name(proc)
+    exe_name = os.path.basename(myps.pssafe.safe_get_exe(proc))
+    for value in (name, exe_name):
+        stem = os.path.splitext(value)[0].casefold()
+        if stem:
+            return stem
+    return ""
 
 
 class MyHelpFormatter(
@@ -107,7 +163,7 @@ def cli_main() -> int:
     parser.add_argument(
         "--include-self",
         action="store_true",
-        help="Include the running myps process",
+        help="Include the running myps invocation and its descendants",
     )
     parser.add_argument(
         "--color",
@@ -180,10 +236,14 @@ def cli_main() -> int:
     skip_pattern = config.skip_re
     keep_pattern = config.keep_re
 
+    all_procs = list(psutil.process_iter())
+    excluded_pids = (
+        set() if args.include_self else myps_invocation_pids(all_procs, thispid)
+    )
+
     myprocs: list[Process] = []
-    proc_iter: Iterator[Process] = psutil.process_iter()
-    for proc in proc_iter:
-        if not args.include_self and myps.pssafe.safe_get_pid(proc) == thispid:
+    for proc in all_procs:
+        if myps.pssafe.safe_get_pid(proc) in excluded_pids:
             continue
         try:
             if process_belongs_to_user(proc, user_identity):
@@ -204,6 +264,8 @@ def cli_main() -> int:
         if ppid not in myproc_pids:
             missing_parents.add(ppid)
     for missing_parent_pid in missing_parents:
+        if missing_parent_pid in excluded_pids:
+            continue
         parent_proc = myps.pssafe.safe_get_process(missing_parent_pid)
         if parent_proc:
             myprocs.append(parent_proc)

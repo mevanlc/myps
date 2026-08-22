@@ -62,7 +62,7 @@ usage: myps [-h] [-f] [-r] [-C] [-v] [-k] [--include-self]
 | `-r`, `--regex` | Interpret `PATTERN` as a regular expression |
 | `-C`, `--case` | Case-sensitive matching (default is case-insensitive) |
 | `-k`, `--keep-ancestors` | Also show the ancestors of matching processes |
-| `--include-self` | Include the running `myps` process (excluded by default) |
+| `--include-self` | Include the running `myps` invocation and its descendants (excluded by default) |
 | `-f`, `--full` | Disable truncation to terminal width |
 | `--color {always,auto,never}` | Control colored output (default: `auto`) |
 | `-c`, `--config FILE` | Read config from `FILE` instead of the default path |
