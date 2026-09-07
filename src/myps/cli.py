@@ -158,7 +158,13 @@ def cli_main() -> int:
         "-k",
         "--keep-ancestors",
         action="store_true",
-        help="Keep ancestor of processes matching pattern",
+        help="Keep ancestors of processes matching pattern",
+    )
+    parser.add_argument(
+        "-K",
+        "--keep-children",
+        action="store_true",
+        help="Keep descendants of processes matching pattern",
     )
     parser.add_argument(
         "--include-self",
@@ -310,7 +316,7 @@ def cli_main() -> int:
         full_lines, pid_to_line = printer.build_all_lines_with_map()
 
         if re_pattern:
-            if args.keep_ancestors:
+            if args.keep_ancestors or args.keep_children:
                 # Identify matching PIDs by searching their full formatted line
                 matching_pids: set[int] = set()
                 for pid, line in pid_to_line.items():
@@ -318,7 +324,11 @@ def cli_main() -> int:
                     if re_pattern.search(search_text):
                         matching_pids.add(pid)
 
-                include_pids = tree.include_with_ancestors(matching_pids)
+                include_pids = set(matching_pids)
+                if args.keep_ancestors:
+                    include_pids.update(tree.include_with_ancestors(matching_pids))
+                if args.keep_children:
+                    include_pids.update(tree.include_with_descendants(matching_pids))
                 lines = printer.build_lines_for_include(include_pids)
             else:
                 lines = [ln for ln in full_lines if re_pattern.search(ln.plain)]
@@ -387,6 +397,7 @@ class CliArgs:
     case: bool = False
     verbose: bool = False
     keep_ancestors: bool = False
+    keep_children: bool = False
     include_self: bool = False
     color: str = "auto"
     config_path: str | None = None

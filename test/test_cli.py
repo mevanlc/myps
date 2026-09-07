@@ -21,7 +21,7 @@ class StubProcess:
         self._ppid = ppid
         self._username = username
         self._cmdline = [exe]
-        self._name = os.path.basename(exe) or f"proc{pid}"
+        self._name = os.path.basename(exe.replace("\\", "/")) or f"proc{pid}"
 
     def uids(self):
         return self._uids
@@ -121,6 +121,84 @@ terminal = 'Terminal.app/'
     out = capsys.readouterr().out
     assert "Terminal" in out
     assert "Finder" not in out
+
+
+@pytest.mark.parametrize("keep_children_flag", ["-K", "--keep-children"])
+def test_cli_keep_children_includes_full_matching_subtree(
+    keep_children_flag, monkeypatch, capsys
+):
+    user_uid = 501
+    ancestor = StubProcess(100, "/opt/ancestor", (user_uid,) * 3, 1)
+    matched = StubProcess(200, "/opt/matched", (user_uid,) * 3, ancestor.pid)
+    child = StubProcess(300, "/opt/child", (user_uid,) * 3, matched.pid)
+    grandchild = StubProcess(400, "/opt/grandchild", (user_uid,) * 3, child.pid)
+    sibling = StubProcess(500, "/opt/sibling", (user_uid,) * 3, ancestor.pid)
+    procs = [ancestor, matched, child, grandchild, sibling]
+
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", user_uid))
+    monkeypatch.setattr(cli.psutil, "process_iter", lambda: iter(procs))
+    monkeypatch.setattr(pssafe, "safe_get_process", lambda _pid: None)
+    monkeypatch.setattr(
+        psprinter.RichProcess, "is_argv0_equal_to_exe", lambda self: True
+    )
+
+    sys.argv = [
+        "myps",
+        "--full",
+        "--color",
+        "never",
+        "--no-config",
+        keep_children_flag,
+        "matched",
+    ]
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert "matched 200" in out
+    assert "child 300" in out
+    assert "grandchild 400" in out
+    assert "ancestor 100" not in out
+    assert "sibling 500" not in out
+
+
+def test_cli_keep_ancestors_and_children_expand_only_from_direct_matches(
+    monkeypatch, capsys
+):
+    user_uid = 501
+    root = StubProcess(100, "/opt/root", (user_uid,) * 3, 1)
+    ancestor = StubProcess(200, "/opt/ancestor", (user_uid,) * 3, root.pid)
+    matched = StubProcess(300, "/opt/matched", (user_uid,) * 3, ancestor.pid)
+    child = StubProcess(400, "/opt/child", (user_uid,) * 3, matched.pid)
+    ancestor_child = StubProcess(
+        500, "/opt/ancestor-child", (user_uid,) * 3, ancestor.pid
+    )
+    root_child = StubProcess(600, "/opt/root-child", (user_uid,) * 3, root.pid)
+    procs = [root, ancestor, matched, child, ancestor_child, root_child]
+
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", user_uid))
+    monkeypatch.setattr(cli.psutil, "process_iter", lambda: iter(procs))
+    monkeypatch.setattr(pssafe, "safe_get_process", lambda _pid: None)
+    monkeypatch.setattr(
+        psprinter.RichProcess, "is_argv0_equal_to_exe", lambda self: True
+    )
+
+    sys.argv = [
+        "myps",
+        "--full",
+        "--color",
+        "never",
+        "--no-config",
+        "-k",
+        "-K",
+        "matched",
+    ]
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert "root 100" in out
+    assert "ancestor 200" in out
+    assert "matched 300" in out
+    assert "child 400" in out
+    assert "ancestor-child 500" not in out
+    assert "root-child 600" not in out
 
 
 def test_cli_include_self(monkeypatch, capsys):

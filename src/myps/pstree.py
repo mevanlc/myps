@@ -54,6 +54,20 @@ class PSTree:
                 cur = self.parent_map.get(cur, 0)
         return include
 
+    def include_with_descendants(self, base_pids: set[int]) -> set[int]:
+        """Return a set with base pids plus all their descendants."""
+        include: set[int] = set()
+        pending = list(base_pids)
+        while pending:
+            pid = pending.pop()
+            if pid in include:
+                continue
+            include.add(pid)
+            pending.extend(
+                safe_get_pid(child) for child in self.children_map.get(pid, [])
+            )
+        return include
+
 
 def proc_key(proc: Process) -> tuple[str, int]:
     exe = safe_get_exe(proc)

@@ -50,7 +50,7 @@ uv run myps
 ## Usage
 
 ```
-usage: myps [-h] [-f] [-r] [-C] [-v] [-k] [--include-self]
+usage: myps [-h] [-f] [-r] [-C] [-v] [-k] [-K] [--include-self]
             [--color {always,auto,never}] [-c FILE | --no-config]
             [--init-config]
             [PATTERN]
@@ -62,6 +62,7 @@ usage: myps [-h] [-f] [-r] [-C] [-v] [-k] [--include-self]
 | `-r`, `--regex` | Interpret `PATTERN` as a regular expression |
 | `-C`, `--case` | Case-sensitive matching (default is case-insensitive) |
 | `-k`, `--keep-ancestors` | Also show the ancestors of matching processes |
+| `-K`, `--keep-children` | Also show the full subprocess trees of matching processes |
 | `--include-self` | Include the running `myps` invocation and its descendants (excluded by default) |
 | `-f`, `--full` | Disable truncation to terminal width |
 | `--color {always,auto,never}` | Control colored output (default: `auto`) |
@@ -74,8 +75,11 @@ usage: myps [-h] [-f] [-r] [-C] [-v] [-k] [--include-self]
 command line — so `myps python` finds a process whether "python" appears in its
 name or only in its arguments.
 
-Without `-k`, matching lines are printed on their own. With `-k`, each match is
-shown along with its chain of parents, so you can see where it sits in the tree.
+Without `-k` or `-K`, matching lines are printed on their own. With `-k`, each
+match is shown along with its chain of parents, so you can see where it sits in
+the tree. With `-K`, each directly matching process is shown with its full
+subprocess tree. When the flags are combined, ancestors added by `-k` do not
+have their other subprocesses added by `-K`.
 
 Output is truncated to the terminal width and colorized only when stdout is a
 TTY; piping to `less` or `head` gives full, plain lines automatically.
@@ -85,6 +89,7 @@ myps                       # whole tree for your user
 myps 'python*'             # glob match
 myps -r 'node|deno'        # regex match
 myps -k -r 'ssh-agent'     # match plus its ancestors
+myps -K chrome             # matches plus their subprocess trees
 myps -k --include-self myps # include myps itself in the match
 myps -f node | less -R     # untruncated, piped
 ```
