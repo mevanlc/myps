@@ -57,7 +57,7 @@ uv run myps
 ## Usage
 
 ```
-usage: myps [-h] [-f] [-r] [-C] [-v] [-k] [-K] [--include-self]
+usage: myps [-h] [-b] [-f] [-r] [-C] [-v] [-k] [-K] [--include-self]
             [--color {always,auto,never}] [-c FILE | --no-config]
             [--init-config]
             [PATTERN]
@@ -66,6 +66,7 @@ usage: myps [-h] [-f] [-r] [-C] [-v] [-k] [-K] [--include-self]
 | Option | Description |
 | --- | --- |
 | `PATTERN` | Filter processes by pattern (glob by default) |
+| `-b`, `--bare` | Print a bare list of PIDs instead of the process tree |
 | `-r`, `--regex` | Interpret `PATTERN` as a regular expression |
 | `-C`, `--case` | Case-sensitive matching (default is case-insensitive) |
 | `-k`, `--keep-ancestors` | Also show the ancestors of matching processes |
@@ -98,6 +99,7 @@ myps -r 'node|deno'        # regex match
 myps -k -r 'ssh-agent'     # match plus its ancestors
 myps -K chrome             # matches plus their subprocess trees
 myps -k --include-self myps # include myps itself in the match
+myps -b 'python*'            # bare list of PIDs matching python
 myps -f node | less -R     # untruncated, piped
 ```
 

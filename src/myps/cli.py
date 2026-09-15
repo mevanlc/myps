@@ -134,6 +134,12 @@ def cli_main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
+        "-b",
+        "--bare",
+        action="store_true",
+        help="Print bare list of PIDs instead of the process tree",
+    )
+    parser.add_argument(
         "-f", "--full", action="store_true", help="Disable terminal-width truncation"
     )
     parser.add_argument(
@@ -325,35 +331,42 @@ def cli_main() -> int:
         full_lines, pid_to_line = printer.build_all_lines_with_map()
 
         if re_pattern:
+            # Identify matching PIDs by searching their full formatted line
+            matching_pids = [
+                pid
+                for pid, line in pid_to_line.items()
+                if re_pattern.search(line.plain)
+            ]
             if args.keep_ancestors or args.keep_children:
-                # Identify matching PIDs by searching their full formatted line
-                matching_pids: set[int] = set()
-                for pid, line in pid_to_line.items():
-                    search_text = line.plain
-                    if re_pattern.search(search_text):
-                        matching_pids.add(pid)
-
-                include_pids = set(matching_pids)
+                matching_set = set(matching_pids)
+                include_pids = set(matching_set)
                 if args.keep_ancestors:
-                    include_pids.update(tree.include_with_ancestors(matching_pids))
+                    include_pids.update(tree.include_with_ancestors(matching_set))
                 if args.keep_children:
-                    include_pids.update(tree.include_with_descendants(matching_pids))
+                    include_pids.update(tree.include_with_descendants(matching_set))
+                selected_pids = [pid for pid in pid_to_line if pid in include_pids]
                 lines = printer.build_lines_for_include(include_pids)
             else:
-                lines = [ln for ln in full_lines if re_pattern.search(ln.plain)]
+                selected_pids = matching_pids
+                lines = [pid_to_line[pid] for pid in selected_pids]
         else:
+            selected_pids = list(pid_to_line.keys())
             lines = full_lines
 
-        for ln in lines:
-            if term_width:
-                ln.truncate(term_width, overflow="ellipsis")
-            if use_rich_output:
-                console.print(ln, highlight=False)
-            else:
-                print(ln.plain)
+        if args.bare:
+            for pid in selected_pids:
+                print(pid)
+        else:
+            for ln in lines:
+                if term_width:
+                    ln.truncate(term_width, overflow="ellipsis")
+                if use_rich_output:
+                    console.print(ln, highlight=False)
+                else:
+                    print(ln.plain)
         if args.verbose and re_pattern:
             print(f"Matched lines: {len(lines)}")
-    else:
+    elif not args.bare:
         print("No matching processes found for current user.")
 
     return 0
@@ -400,6 +413,7 @@ def console_print(*args: object, **kwargs: object) -> None:
 
 
 class CliArgs:
+    bare: bool = False
     full: bool = False
     regex: bool = False
     filter_pattern: str = ""

@@ -560,3 +560,87 @@ def test_rich_process_unavailable_executable_falls_back_to_path_comparison(
     rendered = rich_proc.__rich__().plain
     assert ("</opt/tool>" in rendered) is not same_path
     assert proc._cmdline[0] in rendered
+
+
+@pytest.mark.parametrize("bare_flag", ["-b", "--bare"])
+def test_cli_bare_outputs_all_pids_without_pattern(bare_flag, monkeypatch, capsys):
+    user_uid = 501
+    parent = StubProcess(100, "/opt/cargo", (user_uid,) * 3, 0)
+    child = StubProcess(200, "/opt/rustc", (user_uid,) * 3, parent.pid)
+    procs = [parent, child]
+
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", user_uid))
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter(procs))
+    monkeypatch.setattr(pssafe, "safe_get_process", lambda _pid: None)
+    sys.argv = ["myps", "--no-config", bare_flag]
+
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert out.splitlines() == ["100", "200"]
+
+
+@pytest.mark.parametrize("bare_flag", ["-b", "--bare"])
+def test_cli_bare_outputs_matching_pids(bare_flag, monkeypatch, capsys):
+    user_uid = 501
+    p1 = StubProcess(100, "/opt/cargo", (user_uid,) * 3, 0)
+    p2 = StubProcess(200, "/opt/rustc", (user_uid,) * 3, p1.pid)
+    p3 = StubProcess(300, "/opt/python", (user_uid,) * 3, 0)
+    procs = [p1, p2, p3]
+
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", user_uid))
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter(procs))
+    monkeypatch.setattr(pssafe, "safe_get_process", lambda _pid: None)
+    sys.argv = ["myps", "--no-config", bare_flag, "rust"]
+
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert out.splitlines() == ["200"]
+
+
+def test_cli_bare_outputs_no_pids_when_no_match(monkeypatch, capsys):
+    user_uid = 501
+    p1 = StubProcess(100, "/opt/cargo", (user_uid,) * 3, 0)
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", user_uid))
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter([p1]))
+    monkeypatch.setattr(pssafe, "safe_get_process", lambda _pid: None)
+    sys.argv = ["myps", "--no-config", "-b", "nonexistent"]
+
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert out == ""
+
+
+def test_cli_bare_outputs_nothing_when_no_user_processes(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", 501))
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter([]))
+    sys.argv = ["myps", "--no-config", "-b"]
+
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert out == ""
+
+
+def test_cli_bare_with_ancestors_and_children(monkeypatch, capsys):
+    user_uid = 501
+    root = StubProcess(100, "/opt/root", (user_uid,) * 3, 0)
+    parent = StubProcess(200, "/opt/parent", (user_uid,) * 3, root.pid)
+    matched = StubProcess(300, "/opt/matched", (user_uid,) * 3, parent.pid)
+    child = StubProcess(400, "/opt/child", (user_uid,) * 3, matched.pid)
+    sibling = StubProcess(500, "/opt/sibling", (user_uid,) * 3, parent.pid)
+    procs = [root, parent, matched, child, sibling]
+
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", user_uid))
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter(procs))
+    monkeypatch.setattr(pssafe, "safe_get_process", lambda _pid: None)
+
+    # Bare with -k: includes ancestors 100, 200, 300
+    sys.argv = ["myps", "--no-config", "-b", "-k", "matched"]
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert out.splitlines() == ["100", "200", "300"]
+
+    # Bare with -K: includes descendants 300, 400
+    sys.argv = ["myps", "--no-config", "-b", "-K", "matched"]
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert out.splitlines() == ["300", "400"]
