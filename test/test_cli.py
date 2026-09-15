@@ -1,6 +1,8 @@
 import os
 import sys
+from unittest.mock import Mock
 
+import psutil
 import pytest
 
 from myps import cli, configutil, psprinter, pssafe
@@ -398,3 +400,163 @@ def test_rich_process_mismatch_renders_exe_instead_of_raising():
     assert "git-remote-https 123" in rendered
     assert "</opt/homebrew/libexec/git-core/git-remote-http>" in rendered
     assert "/opt/homebrew/opt/git/libexec/git-core/git-remote-https" in rendered
+
+
+@pytest.mark.parametrize(
+    ("error_type", "marker"),
+    [
+        (psutil.NoSuchProcess, pssafe.NSP_STRING),
+        (psutil.ZombieProcess, pssafe.ZP_STRING),
+        (psutil.AccessDenied, pssafe.AD_STRING),
+    ],
+)
+def test_cli_process_disappears_during_parent_collection(
+    error_type, marker, monkeypatch, capsys
+):
+    parent = StubProcess(100, "/opt/cargo", (501,) * 3, 1)
+    rust = StubProcess(200, "/opt/rustc", (501,) * 3, parent.pid)
+    linker = StubProcess(300, "/opt/linker", (501,) * 3, rust.pid)
+    procs = [parent, rust, linker]
+
+    def disappear():
+        for method in ("exe", "name", "cmdline"):
+            monkeypatch.setattr(
+                parent, method, Mock(side_effect=error_type(parent.pid))
+            )
+        raise error_type(parent.pid)
+
+    monkeypatch.setattr(parent, "ppid", disappear)
+    for proc in (rust, linker):
+        monkeypatch.setattr(proc, "ppid", Mock(return_value=proc._ppid))
+    constructor = Mock(side_effect=AssertionError("unexpected parent lookup"))
+    monkeypatch.setattr(psutil, "Process", constructor)
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", 501))
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter(procs))
+    sys.argv = [
+        "myps",
+        "--no-config",
+        "--color",
+        "never",
+        "--include-self",
+        "-Kk",
+        "rust",
+    ]
+
+    assert cli.cli_main() == 0
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert f"{marker} 100 ↥? " in output.out
+    assert "rustc 200 ↥? " in output.out
+    assert "linker 300 ↥? " in output.out
+    assert len(output.out.splitlines()) == 3
+    constructor.assert_not_called()
+    for proc in (rust, linker):
+        proc.ppid.assert_called_once_with()
+
+
+@pytest.mark.parametrize("color", ["never", "always"])
+def test_cli_missing_parent_marks_all_children(color, monkeypatch, capsys):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    children = [
+        StubProcess(200, "/opt/rustc", (501,) * 3, 100),
+        StubProcess(300, "/opt/rustfmt", (501,) * 3, 100),
+    ]
+    constructor = Mock(side_effect=psutil.NoSuchProcess(100))
+    monkeypatch.setattr(psutil, "Process", constructor)
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", 501))
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter(children))
+    sys.argv = ["myps", "--no-config", "--color", color, "-Kk", "rust"]
+
+    assert cli.cli_main() == 0
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert output.out.count("↥?") == 2
+    if color == "always":
+        assert output.out.count("\x1b[31m↥?") == 2
+    else:
+        assert "rustc 200 ↥? " in output.out
+        assert "rustfmt 300 ↥? " in output.out
+        assert "\x1b" not in output.out
+    constructor.assert_called_once_with(100)
+
+
+@pytest.mark.parametrize("fetched_parent_disappears", [False, True])
+def test_cli_reuses_collected_ppids_for_fetched_parents(
+    fetched_parent_disappears, monkeypatch, capsys
+):
+    parent = StubProcess(100, "/opt/cargo", (501,) * 3, 0)
+    child = StubProcess(200, "/opt/rustc", (501,) * 3, parent.pid)
+    parent_ppid = psutil.NoSuchProcess(parent.pid) if fetched_parent_disappears else 0
+    monkeypatch.setattr(parent, "ppid", Mock(side_effect=[parent_ppid]))
+    # Invocation detection and parent collection each read once; construction
+    # and both rendering passes must use the collected parent link.
+    monkeypatch.setattr(child, "ppid", Mock(side_effect=[parent.pid, parent.pid]))
+    constructor = Mock(return_value=parent)
+    monkeypatch.setattr(psutil, "Process", constructor)
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", 501))
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter([child]))
+    sys.argv = ["myps", "--no-config", "--color", "never", "-Kk", "rust"]
+
+    assert cli.cli_main() == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2
+    assert lines[0].startswith("cargo 100 ")
+    assert lines[1].startswith("  ⤷ rustc 200 ")
+    assert ("↥?" in lines[0]) is fetched_parent_disappears
+    assert ("↥?" in lines[1]) is fetched_parent_disappears
+    parent.ppid.assert_called_once_with()
+    assert child.ppid.call_count == 2
+    constructor.assert_called_once_with(parent.pid)
+
+
+@pytest.mark.parametrize("parent_kind", ["root", "excluded", "outside_scope"])
+def test_cli_intentional_ancestry_boundaries_are_unmarked(
+    parent_kind, monkeypatch, capsys
+):
+    root = StubProcess(100, "/opt/root", (501,) * 3, 0)
+    proc = StubProcess(200, "/opt/rustc", (501,) * 3, root.pid)
+    parent_lookup = Mock(side_effect=AssertionError("unexpected parent lookup"))
+    procs = [proc]
+    if parent_kind == "root":
+        proc._ppid = 0
+    elif parent_kind == "excluded":
+        root.pid = os.getpid()
+        proc._ppid = root.pid
+        # Skip this process from invocation detection so it can exercise the
+        # deliberate exclusion of an otherwise missing parent during collection.
+        procs = [root, proc]
+        monkeypatch.setattr(cli, "myps_invocation_pids", lambda *_args: {root.pid})
+    else:
+        root._ppid = 999
+        parent_lookup = Mock(return_value=root)
+
+    monkeypatch.setattr(pssafe, "safe_get_process", parent_lookup)
+    monkeypatch.setattr(cli, "current_user_identity", lambda: ("uid", 501))
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter(procs))
+    sys.argv = ["myps", "--no-config", "--color", "never", "-Kk", "rust"]
+
+    assert cli.cli_main() == 0
+    out = capsys.readouterr().out
+    assert "rustc 200 " in out
+    assert "↥?" not in out
+    if parent_kind == "outside_scope":
+        assert "root 100 " in out
+        parent_lookup.assert_called_once_with(root.pid)
+    else:
+        parent_lookup.assert_not_called()
+
+
+@pytest.mark.parametrize("error_type", [FileNotFoundError, PermissionError])
+@pytest.mark.parametrize("same_path", [False, True])
+def test_rich_process_unavailable_executable_falls_back_to_path_comparison(
+    error_type, same_path, monkeypatch
+):
+    proc = StubProcess(123, "/opt/tool", (501,) * 3, 1)
+    proc._cmdline = ["/opt/./tool" if same_path else "/other/tool"]
+    monkeypatch.setattr(os.path, "samefile", Mock(side_effect=error_type()))
+
+    rich_proc = psprinter.RichProcess(proc)
+    assert rich_proc.is_argv0_equal_to_exe() is same_path
+    rendered = rich_proc.__rich__().plain
+    assert ("</opt/tool>" in rendered) is not same_path
+    assert proc._cmdline[0] in rendered

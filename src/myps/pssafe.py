@@ -23,9 +23,11 @@ def safe_get_cmdline(proc: Process) -> list[str]:
 
 
 def safe_get_process(pid: int) -> Process | None:
+    if pid < 0:
+        return None
     try:
         return psutil.Process(pid)
-    except psutil.NoSuchProcess:
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
         return None
 
 

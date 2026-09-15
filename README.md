@@ -23,6 +23,13 @@ process name or from `argv[0]`, so it stays out of the way for ordinary
 processes. Processes whose details can't be read are marked inline rather than
 dropped: ⛔️ access denied, 🧟 zombie, 🪦 no longer exists.
 
+`↥?` after a PID indicates incomplete ancestry: red when that process's parent
+PID could not be read or its parent could not be fetched, yellow when the failed
+lookup belongs to an ancestor. The marker remains in plain output, without the
+color distinction. Normal roots and deliberately excluded parents are unmarked.
+Parent links are collected once and reused to build the tree; other process
+details remain best-effort reads as processes start and exit.
+
 ## Requirements
 
 - Python >= 3.11 (development uses the version in `.python-version`)
@@ -128,8 +135,10 @@ xcode = '[Xx][Cc]ode'
 ```
 
 Skipping applies before the tree is built, but parents of surviving processes
-are re-attached so filtered output keeps its structure. A missing config file
-is not an error — it just means no processes are skipped.
+are re-attached so filtered output keeps its structure. This fetches one layer
+of missing parents; `-k` follows the ancestor links collected in that tree.
+Ancestors beyond that fetch scope are not marked as failed lookups. A missing
+config file is not an error — it just means no processes are skipped.
 
 ## Development
 

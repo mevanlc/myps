@@ -18,6 +18,8 @@ class RichProcessStyles:
     cmdline_args_style: StyleType = "dim"
     exe_style: StyleType = "bright_green"
     delimiter_style: StyleType = "dim"
+    missing_parent_style: StyleType = "red"
+    missing_ancestor_style: StyleType = "yellow"
 
 
 class RichProcess(RichRenderable):
@@ -34,11 +36,14 @@ class RichProcess(RichRenderable):
         self.styles = styles
         self.proc = proc
 
-    def append_to(self, text: Text) -> Text:
+    def append_to(self, text: Text, *, ancestry_style: StyleType | None = None) -> Text:
         text.append(self.name, style=self.styles.name_style)
         text.append(" ")
         text.append(str(self.pid), style=self.styles.pid_style)
         text.append(" ")
+        if ancestry_style is not None:
+            text.append("↥?", style=ancestry_style)
+            text.append(" ")
         if self.should_show_exe():
             text.append("<", style=self.styles.delimiter_style)
             text.append(f"{self.exe}", style=self.styles.exe_style)
@@ -62,7 +67,12 @@ class RichProcess(RichRenderable):
         if not self.cmdline:
             return False
         if os.path.isabs(self.cmdline[0]) == os.path.isabs(self.exe):
-            return os.path.samefile(self.cmdline[0], self.exe)
+            try:
+                return os.path.samefile(self.cmdline[0], self.exe)
+            except OSError:
+                # The executable may be gone or inaccessible, or these values
+                # may be process-status markers rather than filesystem paths.
+                pass
         clexe_nc = os.path.normpath(os.path.normcase(self.cmdline[0]))
         exe_nc = os.path.normpath(os.path.normcase(self.exe))
         return clexe_nc == exe_nc
@@ -123,6 +133,11 @@ class PSTreePrinter:
 
     def fmt_line(self, proc: Process, indent_level: int) -> Text:
         rich_proc = RichProcess(proc)
+        ancestry_style = None
+        if rich_proc.pid in self.tree.missing_parent_pids:
+            ancestry_style = rich_proc.styles.missing_parent_style
+        elif rich_proc.pid in self.tree.missing_ancestor_pids:
+            ancestry_style = rich_proc.styles.missing_ancestor_style
 
         # Determine if we should show the descender (⤷)
         # Show it only for the first item in a new indent group
@@ -146,5 +161,5 @@ class PSTreePrinter:
 
         text = Text()
         text.append(indent_str)
-        rich_proc.append_to(text)
+        rich_proc.append_to(text, ancestry_style=ancestry_style)
         return text

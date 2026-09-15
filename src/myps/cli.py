@@ -263,18 +263,23 @@ def cli_main() -> int:
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
 
-    missing_parents: set[int] = set()
+    ppid_by_pid: dict[int, int] = {}
+    missing_parents: dict[int, list[int]] = {}
+    missing_parent_pids: set[int] = set()
     myproc_pids = {myps.pssafe.safe_get_pid(p) for p in myprocs}
     for proc in myprocs:
+        pid = myps.pssafe.safe_get_pid(proc)
         ppid = myps.pssafe.safe_get_ppid(proc)
-        if ppid not in myproc_pids:
-            missing_parents.add(ppid)
-    for missing_parent_pid in missing_parents:
-        if missing_parent_pid in excluded_pids:
-            continue
+        ppid_by_pid[pid] = ppid
+        if ppid > 0 and ppid not in myproc_pids and ppid not in excluded_pids:
+            missing_parents.setdefault(ppid, []).append(pid)
+    for missing_parent_pid, child_pids in missing_parents.items():
         parent_proc = myps.pssafe.safe_get_process(missing_parent_pid)
-        if parent_proc:
+        if parent_proc is None:
+            missing_parent_pids.update(child_pids)
+        else:
             myprocs.append(parent_proc)
+            ppid_by_pid[missing_parent_pid] = myps.pssafe.safe_get_ppid(parent_proc)
 
     re_pattern: re.Pattern[str] | None = None
     if args.filter_pattern:
@@ -296,7 +301,11 @@ def cli_main() -> int:
         print(f"Total processes for user {user_identity[1]}: {len(myprocs)}")
 
     if myprocs:
-        tree = PSTree.from_processes(myprocs)
+        tree = PSTree.from_processes(
+            myprocs,
+            ppid_by_pid=ppid_by_pid,
+            missing_parent_pids=missing_parent_pids,
+        )
         printer = PSTreePrinter(tree)
 
         # Determine if we should use colored output
