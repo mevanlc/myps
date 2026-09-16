@@ -23,7 +23,7 @@ process name or from `argv[0]`, so it stays out of the way for ordinary
 processes. Processes whose details can't be read are marked inline rather than
 dropped: ⛔️ access denied, 🧟 zombie, 🪦 no longer exists.
 
-`↥?` after a PID indicates incomplete ancestry: red when that process's parent
+`↥` after a PID indicates incomplete ancestry: red when that process's parent
 PID could not be read or its parent could not be fetched, yellow when the failed
 lookup belongs to an ancestor. The marker remains in plain output, without the
 color distinction. Normal roots and deliberately excluded parents are unmarked.

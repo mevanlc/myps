@@ -9,6 +9,9 @@ from rich.text import Text
 from .pssafe import safe_get_cmdline, safe_get_exe, safe_get_name, safe_get_pid
 from .pstree import PSTree
 
+INCOMPLETE_ANCESTRY_MARKER = "↥"
+DESCENDER_MARKER = "⤷"
+
 
 @dataclass
 class RichProcessStyles:
@@ -42,7 +45,7 @@ class RichProcess(RichRenderable):
         text.append(str(self.pid), style=self.styles.pid_style)
         text.append(" ")
         if ancestry_style is not None:
-            text.append("↥?", style=ancestry_style)
+            text.append(INCOMPLETE_ANCESTRY_MARKER, style=ancestry_style)
             text.append(" ")
         if self.should_show_exe():
             text.append("<", style=self.styles.delimiter_style)
@@ -88,7 +91,7 @@ class PSTreePrinter:
         self,
         tree: PSTree,
         indent_pad_str: str = "  ",
-        indent_descender: str = "⤷ ",
+        indent_descender: str = f"{DESCENDER_MARKER} ",
     ):
         self.tree = tree
         self.indent_padder = indent_pad_str

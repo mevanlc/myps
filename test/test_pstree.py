@@ -57,16 +57,16 @@ def test_unreadable_parent_marks_descendants_before_filtering(sentinel):
     console = Console()
     for pid, color in ((100, "red"), (200, "yellow"), (300, "yellow")):
         line = pid_to_line[pid]
-        assert f"{pid} ↥? " in line.plain
-        marker_index = line.plain.index("↥?")
+        assert f"{pid} ↥ " in line.plain
+        marker_index = line.plain.index("↥")
         assert line.get_style_at_offset(console, marker_index).color.name == color
-    assert "↥?" not in pid_to_line[400].plain
-    assert "↥?" not in pid_to_line[500].plain
+    assert "↥" not in pid_to_line[400].plain
+    assert "↥" not in pid_to_line[500].plain
 
     lines = printer.build_lines_for_include({grandchild.pid})
     assert len(lines) == 1
-    assert "300 ↥? " in lines[0].plain
-    marker_index = lines[0].plain.index("↥?")
+    assert "300 ↥ " in lines[0].plain
+    marker_index = lines[0].plain.index("↥")
     assert lines[0].get_style_at_offset(console, marker_index).color.name == "yellow"
 
 
@@ -81,7 +81,7 @@ def test_immediate_failure_takes_precedence_over_ancestor_failure():
     assert tree.missing_parent_pids == {root.pid, child.pid}
     assert tree.missing_ancestor_pids == {grandchild.pid}
     _, lines = PSTreePrinter(tree).build_all_lines_with_map()
-    marker_index = lines[child.pid].plain.index("↥?")
+    marker_index = lines[child.pid].plain.index("↥")
     assert (
         lines[child.pid].get_style_at_offset(Console(), marker_index).color.name
         == "red"

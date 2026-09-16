@@ -445,9 +445,9 @@ def test_cli_process_disappears_during_parent_collection(
     assert cli.cli_main() == 0
     output = capsys.readouterr()
     assert output.err == ""
-    assert f"{marker} 100 ↥? " in output.out
-    assert "rustc 200 ↥? " in output.out
-    assert "linker 300 ↥? " in output.out
+    assert f"{marker} 100 ↥ " in output.out
+    assert "rustc 200 ↥ " in output.out
+    assert "linker 300 ↥ " in output.out
     assert len(output.out.splitlines()) == 3
     constructor.assert_not_called()
     for proc in (rust, linker):
@@ -470,12 +470,12 @@ def test_cli_missing_parent_marks_all_children(color, monkeypatch, capsys):
     assert cli.cli_main() == 0
     output = capsys.readouterr()
     assert output.err == ""
-    assert output.out.count("↥?") == 2
+    assert output.out.count("↥") == 2
     if color == "always":
-        assert output.out.count("\x1b[31m↥?") == 2
+        assert output.out.count("\x1b[31m↥") == 2
     else:
-        assert "rustc 200 ↥? " in output.out
-        assert "rustfmt 300 ↥? " in output.out
+        assert "rustc 200 ↥ " in output.out
+        assert "rustfmt 300 ↥ " in output.out
         assert "\x1b" not in output.out
     constructor.assert_called_once_with(100)
 
@@ -502,8 +502,8 @@ def test_cli_reuses_collected_ppids_for_fetched_parents(
     assert len(lines) == 2
     assert lines[0].startswith("cargo 100 ")
     assert lines[1].startswith("  ⤷ rustc 200 ")
-    assert ("↥?" in lines[0]) is fetched_parent_disappears
-    assert ("↥?" in lines[1]) is fetched_parent_disappears
+    assert ("↥" in lines[0]) is fetched_parent_disappears
+    assert ("↥" in lines[1]) is fetched_parent_disappears
     parent.ppid.assert_called_once_with()
     assert child.ppid.call_count == 2
     constructor.assert_called_once_with(parent.pid)
@@ -538,7 +538,7 @@ def test_cli_intentional_ancestry_boundaries_are_unmarked(
     assert cli.cli_main() == 0
     out = capsys.readouterr().out
     assert "rustc 200 " in out
-    assert "↥?" not in out
+    assert "↥" not in out
     if parent_kind == "outside_scope":
         assert "root 100 " in out
         parent_lookup.assert_called_once_with(root.pid)
