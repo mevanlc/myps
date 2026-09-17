@@ -149,8 +149,8 @@ def cli_main() -> int:
         help="Interpret pattern as a regular expression",
     )
     parser.add_argument(
-        "-C",
-        "--case",
+        "-s",
+        "--case-sensitive",
         action="store_true",
         help="Case-sensitive pattern matching (default is case-insensitive)",
     )
@@ -173,11 +173,13 @@ def cli_main() -> int:
         help="Keep descendants of processes matching pattern",
     )
     parser.add_argument(
+        "-i",
         "--include-self",
         action="store_true",
         help="Include the running myps invocation and its descendants",
     )
     parser.add_argument(
+        "-C",
         "--color",
         choices=["always", "auto", "never"],
         default="auto",
@@ -192,11 +194,13 @@ def cli_main() -> int:
         help=f"Read config from <file> instead of {configutil.DEFAULT_CONFIG_PATH}",
     )
     config_group.add_argument(
+        "-N",
         "--no-config",
         action="store_true",
         help="Do not read a config file",
     )
     parser.add_argument(
+        "-I",
         "--init-config",
         action="store_true",
         help="Write example config to the target path and exit",
@@ -289,7 +293,7 @@ def cli_main() -> int:
 
     re_pattern: re.Pattern[str] | None = None
     if args.filter_pattern:
-        flags = 0 if args.case else re.IGNORECASE
+        flags = 0 if args.case_sensitive else re.IGNORECASE
         if args.regex:
             re_pattern = re.compile(args.filter_pattern, flags)
         else:
@@ -301,7 +305,8 @@ def cli_main() -> int:
     if args.verbose:
         if args.filter_pattern:
             print(
-                f"Pattern: {args.filter_pattern!r}, Regex: {args.regex}, Case: {args.case}"
+                f"Pattern: {args.filter_pattern!r}, Regex: {args.regex}, "
+                f"Case sensitive: {args.case_sensitive}"
             )
             print(f"Compiled regex: {re_pattern.pattern if re_pattern else 'None'}")
         print(f"Total processes for user {user_identity[1]}: {len(myprocs)}")
@@ -417,7 +422,7 @@ class CliArgs:
     full: bool = False
     regex: bool = False
     filter_pattern: str = ""
-    case: bool = False
+    case_sensitive: bool = False
     verbose: bool = False
     keep_ancestors: bool = False
     keep_children: bool = False

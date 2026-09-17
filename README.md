@@ -57,9 +57,8 @@ uv run myps
 ## Usage
 
 ```
-usage: myps [-h] [-b] [-f] [-r] [-C] [-v] [-k] [-K] [--include-self]
-            [--color {always,auto,never}] [-c FILE | --no-config]
-            [--init-config]
+usage: myps [-h] [-b] [-f] [-r] [-s] [-v] [-k] [-K] [-i]
+            [-C {always,auto,never}] [-c FILE | -N] [-I]
             [PATTERN]
 ```
 
@@ -68,15 +67,15 @@ usage: myps [-h] [-b] [-f] [-r] [-C] [-v] [-k] [-K] [--include-self]
 | `PATTERN` | Filter processes by pattern (glob by default) |
 | `-b`, `--bare` | Print a bare list of PIDs instead of the process tree |
 | `-r`, `--regex` | Interpret `PATTERN` as a regular expression |
-| `-C`, `--case` | Case-sensitive matching (default is case-insensitive) |
+| `-s`, `--case-sensitive` | Case-sensitive matching (default is case-insensitive) |
 | `-k`, `--keep-ancestors` | Also show the ancestors of matching processes |
 | `-K`, `--keep-children` | Also show the full subprocess trees of matching processes |
-| `--include-self` | Include the running `myps` invocation and its descendants (excluded by default) |
+| `-i`, `--include-self` | Include the running `myps` invocation and its descendants (excluded by default) |
 | `-f`, `--full` | Disable truncation to terminal width |
-| `--color {always,auto,never}` | Control colored output (default: `auto`) |
+| `-C`, `--color {always,auto,never}` | Control colored output (default: `auto`) |
 | `-c`, `--config FILE` | Read config from `FILE` instead of the default path |
-| `--no-config` | Do not read a config file |
-| `--init-config` | Write an example config to the target path and exit |
+| `-N`, `--no-config` | Do not read a config file |
+| `-I`, `--init-config` | Write an example config to the target path and exit |
 | `-v`, `--verbose` | Print argument and match diagnostics |
 
 `PATTERN` is matched against the whole rendered line — name, pid, exe path, and
